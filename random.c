@@ -5,7 +5,7 @@
  * example.
  */
 
-#define DEBUG 1
+//#define DEBUG 1
 #define UNSIGNED_INT "unsigned int"
 #define STRUCT_RANDOM_INFO "struct random_info"
 
@@ -57,6 +57,8 @@ ubx_config_t rnd_config[] = {
 ubx_port_t rnd_ports[] = {
 	{ .name="seed", .in_type_name="unsigned int" },
 	{ .name="rnd", .out_type_name="unsigned int" },
+	{ .name="local_in", .in_type_name="struct random_info" },
+	{ .name="local_out", .out_type_name="struct random_info" },
 	{ NULL },
 };
 
@@ -98,9 +100,9 @@ static int create_local_lfds(ubx_block_t *b) {
         d3->data = malloc(sizeof(uint32_t));
         *(uint32_t*)d3->data = (uint32_t) sizeof(struct random_info);
         
-	// add ports
-        ubx_port_add(b, "local_in", "local in port", "struct random_info", sizeof(struct random_info),0, 0, BLOCK_STATE_INACTIVE);
-        ubx_port_add(b, "local_out", "local out port", 0, 0,"struct random_info", sizeof(struct random_info), BLOCK_STATE_INACTIVE);
+	// add ports (something wrong with this
+        //ubx_port_add(b, "local_in", "local in port", "struct random_info", sizeof(struct random_info),0, 0, BLOCK_STATE_INACTIVE);
+        //ubx_port_add(b, "local_out", "local out port", 0, 0,"struct random_info", sizeof(struct random_info), BLOCK_STATE_INACTIVE);
 
 	// get ports
         local_in = ubx_port_get(b, "local_in");
@@ -230,12 +232,18 @@ static void rnd_step(ubx_block_t *b) {
 
 	//inf=(struct random_info*) b->private_data;
 	ubx_port_t* local_in = ubx_port_get(b, "local_in");
+	ubx_port_t* local_out = ubx_port_get(b, "local_out");
 	read_random_info(local_in, &inf);
 
 	ubx_port_t* rand_port = ubx_port_get(b, "rnd");
 	rand_val = random();
+	DBG("inf.max: %i", inf.max);
+	DBG("inf.min: %i", inf.min);
 	rand_val = (rand_val > inf.max) ? (rand_val%inf.max) : rand_val;
 	rand_val = (rand_val < inf.min) ? ((inf.min + rand_val)%inf.max) : rand_val;
+	
+	// write again else it becomes empty
+	write_random_info(local_out, &inf);
 
 	write_uint(rand_port, &rand_val);
 }
