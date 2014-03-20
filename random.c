@@ -80,45 +80,55 @@ static int create_local_lfds(ubx_block_t *b) {
         ubx_block_t *fifo;
         ubx_data_t *d,*d2,*d3;
         ubx_port_t *local_in, *local_out;
+	ubx_module_t* mod;
 
-        //ubx_module_load(c->ni, "std_blocks/lfds_buffers/lfds_cyclic.so");
+	/* if fifo module is not loaded load it */
+	HASH_FIND_STR(b->ni->modules, "lfds_buffers/cyclic", mod);
+	if (mod == NULL) {
+		ubx_module_load(b->ni, "std_blocks/lfds_buffers/lfds_cyclic.so");
+	}
         fifo = ubx_block_create(b->ni, "lfds_buffers/cyclic", "local_fifo");
 
-	// set type_name
+	/* set type_name */
         d = ubx_config_get_data(fifo, "type_name");
         int len =  strlen("struct random_info")+1;
         ubx_data_resize(d, len);
         strncpy((char*)d->data,STRUCT_RANDOM_INFO,len);
 
-	// set buffer_len
+	/* set buffer_len */
         d2 = ubx_config_get_data(fifo, "buffer_len");
         d2->data = malloc(sizeof(uint32_t));
         *(uint32_t*)d2->data = (uint32_t) 1;
         
-	// set data_len
+	/* set data_len */
         d3 = ubx_config_get_data(fifo, "data_len");
         d3->data = malloc(sizeof(uint32_t));
         *(uint32_t*)d3->data = (uint32_t) sizeof(struct random_info);
         
-	// add ports (something wrong with this
-        //ubx_port_add(b, "local_in", "local in port", "struct random_info", sizeof(struct random_info),0, 0, BLOCK_STATE_INACTIVE);
-        //ubx_port_add(b, "local_out", "local out port", 0, 0,"struct random_info", sizeof(struct random_info), BLOCK_STATE_INACTIVE);
+	/* add ports (something wrong with this) */
+	/*
+        if (ubx_port_add(b, "local_in", "local in port", "struct random_info", sizeof(struct random_info),0, 0, BLOCK_STATE_INACTIVE) != 0) {
+		ERR("failed to create local_in port");
+		return ret;
+	}
 
-	// get ports
+        if (ubx_port_add(b, "local_out", "local out port", 0, 0,"struct random_info", sizeof(struct random_info), BLOCK_STATE_INACTIVE) != 0) {
+		ERR("failed to create local_in port");
+		return ret;
+	}
+	*/
+
+	/* get ports */
         local_in = ubx_port_get(b, "local_in");
         local_out = ubx_port_get(b, "local_out");
 
-	// connect ports to internal fifo
-        if (ubx_port_connect_out(local_out, fifo) != 0) {
-		ERR("failed to connect local_out to fifo");
-		return ret;
-	}
-        if (ubx_port_connect_in(local_in, fifo) !=0) {
-		ERR("failed to connect local_in to fifi");
+	/* connect ports to internal fifo */
+	if (ubx_ports_connect_uni(local_out, local_in, fifo) != 0) {
+		ERR("failed to connect ports to fifo");
 		return ret;
 	}
 
-         /* init and start the block */
+        /* init and start the block */
         if(ubx_block_init(fifo) != 0) {
                 ERR("failed to init local fifo");
                 return ret;
@@ -143,17 +153,12 @@ static int create_local_lfds(ubx_block_t *b) {
 static int rnd_init(ubx_block_t *b)
 {
 	int ret=0;
-	create_local_lfds(b);
 	DBG(" ");
-	// replaced with local fifo
-	/*
-	if ((b->private_data = calloc(1, sizeof(struct random_info)))==NULL) {
-		ERR("Failed to alloc memory");
-		ret=EOUTOFMEM;
+	if (create_local_lfds(b) != 0) {
+                ERR("failed to run create_local_lfds");
 		goto out;
 	}
  out:
-	*/
 	return ret;
 }
 
@@ -189,23 +194,16 @@ static int rnd_start(ubx_block_t *b)
 	struct random_config* rndconf;
 	struct random_info inf;
 
-	//inf=(struct random_info*) b->private_data;
-
 	/* get and store min_max_config */
 	rndconf = (struct random_config*) ubx_config_get_data_ptr(b, "min_max_config", &clen);
 	inf.min = rndconf->min;
 	inf.max = (rndconf->max == 0) ? INT_MAX : rndconf->max;
 	ubx_port_t* local_out = ubx_port_get(b, "local_out");
 	DBG("##########");
-	DBG("port address: %p", local_out);
-	DBG("block address: %p", b);
-	DBG("node info address: %p", b->ni);
-	DBG("inf address: %p", &inf);
-	DBG("inf data: %i|%i", inf.min, inf.max);
-	DBG("##########");
 	DBG("writing random info");
 	write_random_info(local_out, &inf);
 	DBG("random info written");
+	DBG("##########");
 
 	/* seed is allowed to change at runtime, check if new one available */
 	ubx_port_t* seed_port = ubx_port_get(b, "seed");
@@ -230,7 +228,6 @@ static void rnd_step(ubx_block_t *b) {
 	unsigned int rand_val;
 	struct random_info inf;
 
-	//inf=(struct random_info*) b->private_data;
 	ubx_port_t* local_in = ubx_port_get(b, "local_in");
 	ubx_port_t* local_out = ubx_port_get(b, "local_out");
 	read_random_info(local_in, &inf);
@@ -242,7 +239,7 @@ static void rnd_step(ubx_block_t *b) {
 	rand_val = (rand_val > inf.max) ? (rand_val%inf.max) : rand_val;
 	rand_val = (rand_val < inf.min) ? ((inf.min + rand_val)%inf.max) : rand_val;
 	
-	// write again else it becomes empty
+	/* write to local fifo */
 	write_random_info(local_out, &inf);
 
 	write_uint(rand_port, &rand_val);
