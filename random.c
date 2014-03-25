@@ -76,6 +76,7 @@ def_write_fun(write_random_info, struct random_info)
  * the different states.
  */
 static int create_local_lfds(ubx_block_t *b) {
+	DBG("start of create_local_lfds");
         int ret = 0;
         ubx_block_t *fifo;
         ubx_data_t *d,*d2,*d3;
@@ -83,24 +84,30 @@ static int create_local_lfds(ubx_block_t *b) {
 	ubx_module_t* mod;
 
 	/* if fifo module is not loaded load it */
-	HASH_FIND_STR(b->ni->modules, "lfds_buffers/cyclic", mod);
+	DBG("loading fifo module/ create");
+	HASH_FIND_STR(b->ni->modules, "std_blocks/lfds_buffers/lfds_cyclic.so", mod);
+
 	if (mod == NULL) {
 		ubx_module_load(b->ni, "std_blocks/lfds_buffers/lfds_cyclic.so");
 	}
+
         fifo = ubx_block_create(b->ni, "lfds_buffers/cyclic", "local_fifo");
 
 	/* set type_name */
+	DBG("set type name");
         d = ubx_config_get_data(fifo, "type_name");
         int len =  strlen("struct random_info")+1;
         ubx_data_resize(d, len);
         strncpy((char*)d->data,STRUCT_RANDOM_INFO,len);
 
 	/* set buffer_len */
+	DBG("set buffer length");
         d2 = ubx_config_get_data(fifo, "buffer_len");
         d2->data = malloc(sizeof(uint32_t));
         *(uint32_t*)d2->data = (uint32_t) 1;
         
 	/* set data_len */
+	DBG("set data length");
         d3 = ubx_config_get_data(fifo, "data_len");
         d3->data = malloc(sizeof(uint32_t));
         *(uint32_t*)d3->data = (uint32_t) sizeof(struct random_info);
@@ -119,16 +126,19 @@ static int create_local_lfds(ubx_block_t *b) {
 	*/
 
 	/* get ports */
+	DBG("get ports");
         local_in = ubx_port_get(b, "local_in");
         local_out = ubx_port_get(b, "local_out");
 
 	/* connect ports to internal fifo */
+	DBG("connect ports");
 	if (ubx_ports_connect_uni(local_out, local_in, fifo) != 0) {
 		ERR("failed to connect ports to fifo");
 		return ret;
 	}
 
         /* init and start the block */
+	DBG("init and start");
         if(ubx_block_init(fifo) != 0) {
                 ERR("failed to init local fifo");
                 return ret;
@@ -138,6 +148,7 @@ static int create_local_lfds(ubx_block_t *b) {
                 ERR("failed to start local fifo");
                 return ret;
         }
+	DBG("Complete");
         return ret;
 }
 
@@ -153,11 +164,12 @@ static int create_local_lfds(ubx_block_t *b) {
 static int rnd_init(ubx_block_t *b)
 {
 	int ret=0;
-	DBG(" ");
+	//DBG(" ");
 	if (create_local_lfds(b) != 0) {
                 ERR("failed to run create_local_lfds");
 		goto out;
 	}
+	DBG("rnd_init behind if");
  out:
 	return ret;
 }
@@ -171,11 +183,22 @@ static int rnd_init(ubx_block_t *b)
  */
 static void rnd_cleanup(ubx_block_t *b)
 {
-	DBG(" ");
+	//DBG(" ");
 	//free(b->private_data);
-	ubx_block_t* c = ubx_block_get(b->ni, "local_fifo");
-	ubx_block_stop(c);
-	ubx_block_cleanup(c);
+	ubx_block_t* fifo;
+	ubx_port_t *local_in, *local_out;
+
+	fifo = ubx_block_get(b->ni, "local_fifo");
+	local_in = ubx_port_get(b, "local_in");
+	local_out = ubx_port_get(b, "local_out");
+
+	/* disconnect ports to internal fifo */
+	DBG("disconnecting ports");
+	if (ubx_ports_disconnect_uni(local_out, local_in, fifo) != 0) {
+		ERR("failed to disconnect ports to fifo");
+	}
+	ubx_block_stop(fifo);
+	ubx_block_cleanup(fifo);
 	ubx_block_rm(b->ni, "local_fifo");
 }
 
@@ -188,7 +211,7 @@ static void rnd_cleanup(ubx_block_t *b)
  */
 static int rnd_start(ubx_block_t *b)
 {
-	DBG("in");
+	//DBG("in");
 	uint32_t seed, ret;
 	unsigned int clen;
 	struct random_config* rndconf;
@@ -199,21 +222,21 @@ static int rnd_start(ubx_block_t *b)
 	inf.min = rndconf->min;
 	inf.max = (rndconf->max == 0) ? INT_MAX : rndconf->max;
 	ubx_port_t* local_out = ubx_port_get(b, "local_out");
-	DBG("##########");
-	DBG("writing random info");
+	//DBG("##########");
+	//DBG("writing random info");
 	write_random_info(local_out, &inf);
-	DBG("random info written");
-	DBG("##########");
+	//DBG("random info written");
+	//DBG("##########");
 
 	/* seed is allowed to change at runtime, check if new one available */
 	ubx_port_t* seed_port = ubx_port_get(b, "seed");
 	ret = read_uint(seed_port, &seed);
 
 	if(ret>0) {
-		DBG("starting component. Using seed: %d, min: %d, max: %d", seed, inf.min, inf.max);
+		//DBG("starting component. Using seed: %d, min: %d, max: %d", seed, inf.min, inf.max);
 		srandom(seed);
 	} else {
-		DBG("starting component. Using min: %d, max: %d", inf.min, inf.max);
+		//DBG("starting component. Using min: %d, max: %d", inf.min, inf.max);
 	}
 	return 0; /* Ok */
 }
@@ -234,8 +257,8 @@ static void rnd_step(ubx_block_t *b) {
 
 	ubx_port_t* rand_port = ubx_port_get(b, "rnd");
 	rand_val = random();
-	DBG("inf.max: %i", inf.max);
-	DBG("inf.min: %i", inf.min);
+	//DBG("inf.max: %i", inf.max);
+	//DBG("inf.min: %i", inf.min);
 	rand_val = (rand_val > inf.max) ? (rand_val%inf.max) : rand_val;
 	rand_val = (rand_val < inf.min) ? ((inf.min + rand_val)%inf.max) : rand_val;
 	
