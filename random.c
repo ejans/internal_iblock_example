@@ -32,7 +32,7 @@
 
 //#define DEBUG 1
 #define UNSIGNED_INT "unsigned int"
-#define STRUCT_RANDOM_INFO "struct random_info"
+#define STRUCT_RANDOM_CONFIG "struct random_config"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,12 +50,9 @@
  */
 #include "types/random_config.h"
 #include "types/random_config.h.hexarr"
-#include "types/random_info.h"
-#include "types/random_info.h.hexarr"
 
 /* declare the type and give the char array type representation as the type private_data */
 ubx_type_t random_config_type = def_struct_type(struct random_config, &random_config_h);
-ubx_type_t random_info_type = def_struct_type(struct random_info, &random_info_h);
 
 /* function block meta-data
  * used by higher level functions.
@@ -82,8 +79,8 @@ ubx_config_t rnd_config[] = {
 ubx_port_t rnd_ports[] = {
 	{ .name="seed", .in_type_name="unsigned int" },
 	{ .name="rnd", .out_type_name="unsigned int" },
-	{ .name="local_in", .in_type_name="struct random_info" },
-	{ .name="local_out", .out_type_name="struct random_info" },
+	{ .name="local_in", .in_type_name="struct random_config" },
+	{ .name="local_out", .out_type_name="struct random_config" },
 	{ NULL },
 };
 
@@ -93,8 +90,8 @@ ubx_port_t rnd_ports[] = {
  */
 def_read_fun(read_uint, unsigned int)
 def_write_fun(write_uint, unsigned int)
-def_read_fun(read_random_info, struct random_info)
-def_write_fun(write_random_info, struct random_info)
+def_read_fun(read_random_config, struct random_config)
+def_write_fun(write_random_config, struct random_config)
 
 /*
  * function to create local fifo as a data holder between
@@ -121,9 +118,9 @@ static int create_local_lfds(ubx_block_t *b) {
 	/* set type_name */
 	DBG("set type name");
         d = ubx_config_get_data(fifo, "type_name");
-        int len =  strlen("struct random_info")+1;
+        int len =  strlen("struct random_config")+1;
         ubx_data_resize(d, len);
-        strncpy((char*)d->data,STRUCT_RANDOM_INFO,len);
+        strncpy((char*)d->data,STRUCT_RANDOM_CONFIG,len);
 
 	/* set buffer_len */
 	DBG("set buffer length");
@@ -135,16 +132,16 @@ static int create_local_lfds(ubx_block_t *b) {
 	DBG("set data length");
         d3 = ubx_config_get_data(fifo, "data_len");
         d3->data = malloc(sizeof(uint32_t));
-        *(uint32_t*)d3->data = (uint32_t) sizeof(struct random_info);
+        *(uint32_t*)d3->data = (uint32_t) sizeof(struct random_config);
         
 	/* add ports (something wrong with this) */
 	/*
-        if (ubx_port_add(b, "local_in", "local in port", "struct random_info", sizeof(struct random_info),0, 0, BLOCK_STATE_INACTIVE) != 0) {
+        if (ubx_port_add(b, "local_in", "local in port", "struct random_config", sizeof(struct random_config),0, 0, BLOCK_STATE_INACTIVE) != 0) {
 		ERR("failed to create local_in port");
 		return ret;
 	}
 
-        if (ubx_port_add(b, "local_out", "local out port", 0, 0,"struct random_info", sizeof(struct random_info), BLOCK_STATE_INACTIVE) != 0) {
+        if (ubx_port_add(b, "local_out", "local out port", 0, 0,"struct random_config", sizeof(struct random_config), BLOCK_STATE_INACTIVE) != 0) {
 		ERR("failed to create local_in port");
 		return ret;
 	}
@@ -189,7 +186,7 @@ static int create_local_lfds(ubx_block_t *b) {
 static int rnd_init(ubx_block_t *b)
 {
 	int ret=0;
-	//DBG(" ");
+	DBG(" ");
 	if (create_local_lfds(b) != 0) {
                 ERR("failed to run create_local_lfds");
 		goto out;
@@ -208,7 +205,7 @@ static int rnd_init(ubx_block_t *b)
  */
 static void rnd_cleanup(ubx_block_t *b)
 {
-	//DBG(" ");
+	DBG(" ");
 	//free(b->private_data);
 	ubx_block_t* fifo;
 	ubx_port_t *local_in, *local_out;
@@ -236,32 +233,25 @@ static void rnd_cleanup(ubx_block_t *b)
  */
 static int rnd_start(ubx_block_t *b)
 {
-	//DBG("in");
+	DBG("in");
 	uint32_t seed, ret;
 	unsigned int clen;
-	struct random_config* rndconf;
-	struct random_info inf;
+	struct random_config* conf;
 
 	/* get and store min_max_config */
-	rndconf = (struct random_config*) ubx_config_get_data_ptr(b, "min_max_config", &clen);
-	inf.min = rndconf->min;
-	inf.max = (rndconf->max == 0) ? INT_MAX : rndconf->max;
+	conf = (struct random_config*) ubx_config_get_data_ptr(b, "min_max_config", &clen);
 	ubx_port_t* local_out = ubx_port_get(b, "local_out");
-	//DBG("##########");
-	//DBG("writing random info");
-	write_random_info(local_out, &inf);
-	//DBG("random info written");
-	//DBG("##########");
+	write_random_config(local_out, conf);
 
 	/* seed is allowed to change at runtime, check if new one available */
 	ubx_port_t* seed_port = ubx_port_get(b, "seed");
 	ret = read_uint(seed_port, &seed);
 
 	if(ret>0) {
-		//DBG("starting component. Using seed: %d, min: %d, max: %d", seed, inf.min, inf.max);
+		DBG("starting component. Using seed: %d, min: %d, max: %d", seed, conf->min, conf->max);
 		srandom(seed);
 	} else {
-		//DBG("starting component. Using min: %d, max: %d", inf.min, inf.max);
+		DBG("starting component. Using min: %d, max: %d", conf->min, conf->max);
 	}
 	return 0; /* Ok */
 }
@@ -274,21 +264,22 @@ static int rnd_start(ubx_block_t *b)
  */
 static void rnd_step(ubx_block_t *b) {
 	unsigned int rand_val;
-	struct random_info inf;
+	struct random_config conf;
 
 	ubx_port_t* local_in = ubx_port_get(b, "local_in");
 	ubx_port_t* local_out = ubx_port_get(b, "local_out");
-	read_random_info(local_in, &inf);
+	DBG("Before read_random_config");
+	read_random_config(local_in, &conf);
+	DBG("conf.max: %i", conf.max);
+	DBG("conf.min: %i", conf.min);
 
 	ubx_port_t* rand_port = ubx_port_get(b, "rnd");
 	rand_val = random();
-	//DBG("inf.max: %i", inf.max);
-	//DBG("inf.min: %i", inf.min);
-	rand_val = (rand_val > inf.max) ? (rand_val%inf.max) : rand_val;
-	rand_val = (rand_val < inf.min) ? ((inf.min + rand_val)%inf.max) : rand_val;
+	rand_val = (rand_val > conf.max) ? (rand_val%conf.max) : rand_val;
+	rand_val = (rand_val < conf.min) ? ((conf.min + rand_val)%conf.max) : rand_val;
 	
 	/* write to local fifo */
-	write_random_info(local_out, &inf);
+	write_random_config(local_out, &conf);
 
 	write_uint(rand_port, &rand_val);
 }
@@ -323,7 +314,6 @@ ubx_block_t random_comp = {
 static int rnd_module_init(ubx_node_info_t* ni)
 {
 	ubx_type_register(ni, &random_config_type);
-	ubx_type_register(ni, &random_info_type);
 	return ubx_block_register(ni, &random_comp);
 }
 
@@ -337,7 +327,6 @@ static int rnd_module_init(ubx_node_info_t* ni)
 static void rnd_module_cleanup(ubx_node_info_t *ni)
 {
 	ubx_type_unregister(ni, "struct random_config");
-	ubx_type_unregister(ni, "struct random_info");
 	ubx_block_unregister(ni, "internal_iblock_example/random");
 }
 
